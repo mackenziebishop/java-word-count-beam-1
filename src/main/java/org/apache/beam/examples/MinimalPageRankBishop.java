@@ -38,6 +38,7 @@ import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.FlatMapElements;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TypeDescriptors;
 
 /**
@@ -109,15 +110,13 @@ public class MinimalPageRankBishop {
     String dataPath = dataFolder + "/" + dataFile;
     //p.apply(TextIO.read().from("gs://apache-beam-samples/shakespeare/kinglear.txt"))
 
-    p.apply(TextIO.read().from(dataPath))
-           .apply(Filter.by((String line) -> !line.isEmpty()))
-           .apply(Filter.by((String line) -> !line.equals(" ")))
-           .apply(Filter.by((String line) -> !line.startsWith("[")))
-           .apply(MapElements.into(TypeDescriptors.strings())
-            .via((String linkline) -> linkline.substring(2,4))
-           )
-
-        // Concept #2: Apply a FlatMapElements transform the PCollection of text lines.
+    PCollection<String> pcolInputLines = p.apply(TextIO.read().from(dataPath));
+          //  .apply(Filter.by((String line) -> !line.isEmpty()))
+          //  .apply(Filter.by((String line) -> !line.equals(" ")))
+           PCollection<String> pcolLinkLines = pcolInputLines.apply(Filter.by((String line) -> !line.startsWith("[")));
+           PCollection<String> pcolLinks = pcolLinkLines.apply(MapElements.into(TypeDescriptors.strings()).via((String linkline) -> linkline.substring(linkline.indexOf("(")+1, linkline.length()-1)));
+    // PCollection<String> pcolKVpairsJob1 = pcolLinkLines.apply
+           // Concept #2: Apply a FlatMapElements transform the PCollection of text lines.
         // This transform splits the lines in PCollection<String>, where each element is an
         // individual word in Shakespeare's collected texts.
         // .apply(
@@ -141,7 +140,7 @@ public class MinimalPageRankBishop {
         // formatted strings) to a series of text files.
         //
         // By default, it will write to a set of files with names like wordcounts-00001-of-00005
-        .apply(TextIO.write().to("bishopout"));
+        pcolLinks.apply(TextIO.write().to("bishopout"));
 
     p.run().waitUntilFinish();
   }
