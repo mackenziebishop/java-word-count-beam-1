@@ -29,6 +29,8 @@ package org.apache.beam.examples;
 //     - Core Transforms
 
 import java.util.Arrays;
+import java.util.Collection;
+
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -74,50 +76,47 @@ import org.apache.beam.sdk.values.TypeDescriptors;
  */
 public class MinimalPageRankBishop {
 
+  private static PCollection<KV<String, String>> bishopMapper(Pipeline p, String path, String dataFile){
+    PCollection<String> pcolInputLines = p.apply(TextIO.read().from(path + '/' + file));
+
+    PCollection<String> pcolLinkLines = pcolInputLines.apply(Filter.by((String line) -> line.startsWith("[")));
+
+    PCollection<String> pcolLinks = pcolLinkLines.apply(
+      FlatMapElements.into(TypeDescriptors.strings())
+      .via((String linkline) -> Arrays.asList(linkline.substring(linkline.indexOf("(") + 1, linkline.length()-1)))
+    );
+
+    PCollection<KV<String, String >> KVJob1 = pcolLinks.apply(
+      MapElements.into(TypeDescriptors.kvs(TypeDescriptor.strings(), TypeDescriptors.strings()))
+      .via(
+        (String linkedPage) -> KV.of(file, linkedPage)));
+    
+    return KVJob1;
+  }
+
   public static void main(String[] args) {
  
     PipelineOptions options = PipelineOptionsFactory.create();
 
     Pipeline p = Pipeline.create(options);
 
-    String dataFolder = "web04";
+    PCollection<KV<String, String>> collectionKV00 = bishopMapper(p, dataFolder, "go.md");
+    PCollection<KV<String, String>> collectionKV01 = bishopMapper(p, dataFolder, "java.md");
+    PCollection<KV<String, String>> collectionKV02 = bishopMapper(p, dataFolder, "python.md");
+    PCollection<KV<String, String>> collectionKV03 = bishopMapper(p, dataFolder, "README.md");
+
+    PCollectionList<KV<String, String>> pcList = PCollectionList.of(collectionKV00).and(collectionKV01).and(collectionKV02).and(collectionKV03);
+
+    PCollection<KV<String, String>> mergedList = pcList.apply(Flatten.<KV<String, String>>pCollections());
 
 
-    String dataFile = "go.md";
-    String dataPath = dataFolder + "/" + dataFile;
-    //p.apply(TextIO.read().from("gs://apache-beam-samples/shakespeare/kinglear.txt"))
+    //Job 1: Reduce
+    PCollection<KV<String, Iterable <String>>> reducedPairs = mergedList.apply(GroupByKey.<String, String>create());
 
-    PCollection<String> pcolInputLines = p.apply(TextIO.read().from(dataPath));
-          //  .apply(Filter.by((String line) -> !line.isEmpty()))
-          //  .apply(Filter.by((String line) -> !line.equals(" ")))
-           PCollection<String> pcolLinkLines = pcolInputLines.apply(Filter.by((String line) -> !line.startsWith("[")));
-           PCollection<String> pcolLinks = pcolLinkLines.apply(MapElements.into(TypeDescriptors.strings()).via((String linkline) -> linkline.substring(linkline.indexOf("(")+1, linkline.length()-1)));
-    // PCollection<String> pcolKVpairsJob1 = pcolLinkLines.apply
-           // Concept #2: Apply a FlatMapElements transform the PCollection of text lines.
-        // This transform splits the lines in PCollection<String>, where each element is an
-        // individual word in Shakespeare's collected texts.
-        // .apply(
-        //     FlatMapElements.into(TypeDescriptors.strings())
-        //         .via((String line) -> Arrays.asList(line.split("[^\\p{L}]+"))))
-        // We use a Filter transform to avoid empty word
-        // .apply(Filter.by((String word) -> !word.isEmpty()))
-        // Concept #3: Apply the Count transform to our PCollection of individual words. The Count
-        // transform returns a new PCollection of key/value pairs, where each key represents a
-        // unique word in the text. The associated value is the occurrence count for that word.
-        //.apply(Count.perElement())
-        // Apply a MapElements transform that formats our PCollection of word counts into a
-        // printable string, suitable for writing to an output file.
-        // .apply(
-        //     MapElements.into(TypeDescriptors.strings())
-        //         .via(
-        //             (KV<String, Long> wordCount) ->
-        //                 wordCount.getKey() + ": " + wordCount.getValue()))
-        // Concept #4: Apply a write transform, TextIO.Write, at the end of the pipeline.
-        // TextIO.Write writes the contents of a PCollection (in this case, our PCollection of
-        // formatted strings) to a series of text files.
-        //
-        // By default, it will write to a set of files with names like wordcounts-00001-of-00005
-        pcolLinks.apply(TextIO.write().to("bishopout"));
+    PCollection<String> KVOut = reducedPairs.apply(MapElements.into(TypeDescriptors.strings())
+      .via((kvpairs) -> kvpairs.toString()));
+
+      KVOut.apply(TextIO.write().to("bishopout"));
 
     p.run().waitUntilFinish();
   }
